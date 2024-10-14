@@ -1,8 +1,16 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { nanoid } from "nanoid";
 
-import { CanvasMode, CanvasState, camera } from "@/types/canvas";
+import {
+    CanvasMode,
+    CanvasState,
+    Color,
+    LayerType,
+    camera,
+    Point,
+} from "@/types/canvas";
 
 import { Info } from "./info";
 import { Participants } from "./participants";
@@ -12,24 +20,71 @@ import {
     useCanRedo,
     useCanUndo,
     useMutation,
+    useStorage,
 } from "@liveblocks/react/suspense";
 import { CursorPresence } from "./cursor-presence";
 import { pointerEventToCanvasPoint } from "@/lib/utils";
+import { LiveObject } from "@liveblocks/client";
+import { LayerPreview } from "./layer-preview";
+
+//good practice to have limited layers
+const MAX_LAYERS = 101;
 
 interface CanvasProps {
     boardId: string;
 }
 
 export const Canvas = ({ boardId }: CanvasProps) => {
+    const layerIds = useStorage((root) => root.layerIds);
     const [canvasState, setCanvasState] = useState<CanvasState>({
         mode: CanvasMode.None,
     });
 
     const [camera, setCamera] = useState<camera>({ x: 0, y: 0 });
+    const [lastColorUsed, setLastColorUsed] = useState<Color>({
+        r: 0,
+        g: 0,
+        b: 0,
+    });
 
     const history = useHistory();
     const canUndo = useCanUndo();
     const canRedo = useCanRedo();
+
+    //Function to insert a layer
+    const insertLayer = useMutation(
+        (
+            { storage, setMyPresence },
+            layerType:
+                | LayerType.Ellipse
+                | LayerType.Rectangle
+                | LayerType.Text
+                | LayerType.Note,
+            position: Point
+        ) => {
+            const liveLayers = storage.get("layers");
+            if (liveLayers.size >= MAX_LAYERS) {
+                return;
+            }
+            const livelayerIds = storage.get("layerIds");
+            const layerId = nanoid();
+            const layer = new LiveObject({
+                type: layerType,
+                x: position.x,
+                y: position.y,
+                height: 100,
+                width: 100,
+                fill: lastColorUsed,
+            });
+
+            livelayerIds.push(layerId);
+            liveLayers.set(layerId, layer);
+
+            setMyPresence({ selection: [layerId] }, { addToHistory: true });
+            setCanvasState({ mode: CanvasMode.None });
+        },
+        [lastColorUsed]
+    );
 
     const onWheel = useCallback((e: React.WheelEvent) => {
         setCamera((camera) => ({
@@ -53,6 +108,22 @@ export const Canvas = ({ boardId }: CanvasProps) => {
         setMyPresence({ cursor: null });
     }, []);
 
+    const onPointerUp = useMutation(
+        ({}, e) => {
+            const point = pointerEventToCanvasPoint(e, camera);
+
+            if (canvasState.mode === CanvasMode.Inserting) {
+                insertLayer(canvasState.LayerType, point);
+            } else {
+                setCanvasState({
+                    mode: CanvasMode.None,
+                });
+            }
+            history.resume();
+        },
+        [camera, canvasState, insertLayer, history]
+    );
+
     return (
         <main className="h-full w-full relative bg-neutral-100 touch-none">
             <Info boardId={boardId} />
@@ -70,8 +141,21 @@ export const Canvas = ({ boardId }: CanvasProps) => {
                 onWheel={onWheel}
                 onPointerMove={onPointerMove}
                 onPointerLeave={onPointerLeave}
+                onPointerUp={onPointerUp}
             >
-                <g>
+                <g
+                    style={{
+                        transform: `translate(${camera.x}px, ${camera.y}px)`,
+                    }}
+                >
+                    {layerIds.map((layerId) => (
+                        <LayerPreview
+                            key={layerId}
+                            id={layerId}
+                            onLayerPointerDown={() => {}}
+                            selectionColor="#000"
+                        />
+                    ))}
                     <CursorPresence />
                 </g>
             </svg>
