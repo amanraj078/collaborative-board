@@ -27,6 +27,7 @@ import { CursorPresence } from "./cursor-presence";
 import { connectionIdToColor, pointerEventToCanvasPoint } from "@/lib/utils";
 import { LiveObject } from "@liveblocks/client";
 import { LayerPreview } from "./layer-preview";
+import { SelectionBox } from "./selectionBox";
 
 //good practice to have limited layers
 const MAX_LAYERS = 101;
@@ -195,6 +196,7 @@ export const Canvas = ({ boardId }: CanvasProps) => {
                             selectionColor={layersIdsToColorSelection[layerId]}
                         />
                     ))}
+                    <SelectionBox onResizeHandlePointerDown={() => {}} />
                     <CursorPresence />
                 </g>
             </svg>
